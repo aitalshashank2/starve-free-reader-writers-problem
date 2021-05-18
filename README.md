@@ -239,20 +239,7 @@ do{
 ```
 Like the readers, the writers are also queued in the FIFO queue of `in_mutex` by calling `wait()` for `in_mutex`.
 
-Hence, all the processes requiring access to the resources can be scheduled in a FCFS manner.
-
-#### Correctness of the solution
-
-##### Mutual Exclusion
-The `rw_mutex` ensures mutual exclusion among all the writers and the first reader. Also, the `in_mutex` ensures mutual exclusion among all the processes. The `mutex` ensures mutual exclusion between the readers trying to access the variable `counter`.
-
-##### Bounded Waiting
-Before entering the critical section, all the processes must pass through `in_mutex` which stores all the waiting processes in a FIFO data structure. So, for a finite number of processes, the waiting time for any process in the queue is finite or bounded.
-
-##### Progress Requirement
-There is no chance of deadlock here and all the processes complete their critical sections in finite time. So, progress is guaranteed.
-
-In this particular solution, we have to use 2 semaphores. An optimized solution is explained below.
+Hence, all the processes requiring access to the resources can be scheduled in a FCFS manner. In this particular solution, we have to use 2 semaphores. An optimized solution is explained below.
 
 ### Optimized Solution (Starve Free)
 #### Global Variables
@@ -327,11 +314,26 @@ do{
 ```
 
 #### Logic
-All the readers can read the data simultaneously. A writer shows itself by setting the variable `writer_waiting` to `true`.
+This solution is similar to the solution above, with an optimization in the implementation of reader. Here too, the queue of `in_mutex` serves as a common waiting queue for the readers and the writers.
 
-The approach of this solution is similar to the solution of the third reader-writer's problem. Here, the semaphore `in_mutex` ensures that the writer stays in the waiting queue with the readers. This is ensured by retaining the `in_mutex` till the writer process ends its cirtical stage. Thus, all the new processes are queued up in the FIFO queue of `in_mutex` irrespective of the type of the process. The FIFO nature of the queue ensures that for a finite set of processes, all the processes are executed. Also, since the queue is FCFS, there will be no problem of starvation as all the processes will get their chance as long as the execution time in critical stage is finite for all the processes. In the writer process, we notice that we have a check to see if the number of readers reading is equal to the number of readers that have completed reading. In other words, this statement checks if there are no readers in the waiting queue. If that is the case, the writer signals both the mutex locks, one before and one after the execution of its critical section and thus, transfers control to the next process in the queue of `in_mutex`. Also, note that `writer_sem` is initialized to 0. This is because we need the semaphore to synchronize across two different processes where one process calss `wait()` and another process calls `signal()`. The reader process initially increments the `readers_started`. Then, it executes its critical section and finally, increments `readers_completed`. Now, if there are no more readers, it signals the `writer_sem` so that a writer can use the resource.
+##### Logic for the writers
+Firstly, the writers wait on the `in_mutex` with all the readers. After acquiring the `in_mutex`, the writer goes on to wait on the `out_mutex`. Now, after acquiring the `out_mutex` (which is just a means to introduce mutual exclusion for the variable `readers_completed`), it compares the variables `readers_started` and `readers_completed`. If they are equal, it means all the readers that had started their reading have completed it. That is, no reader is executing in its critical section currently. If that is the case, the writer simply signals the `out_mutex`, thus, releasing its control over the variable `readers_completed` and continues with its critical section. Note that any other reader or writer cannot execute in their critical sections as `in_mutex` is not signalled yet. If the variables `readers_started` and `readers_completed` are not equal i.e. there is are reader processes executing their critical sections, then, the writer changes the variable `writer_waiting` to `true` to state its presence and then, signals the `out_mutex`. Also, since the resource is busy, the writer waits in `writer_sem` for all the readers to complete their execution. Once it acquires `writer_sem`, it changes the variable `writer_waiting` back to `false` and proceeds to its critical section. Once the writer completes the critical section, it signals the `in_mutex` to state that it does not need the resource anymore. Now, the process next in queue of `in_mutex` can proceed.
 
-Thus, the implementation is starve-free, because the processes are queued in a FIFO manner. This approach is better than the first one because it requires only one mutex for a Reader. This is significant because using another mutex requires a lot of system calls and thus, time.
+##### Logic for the readers
+In the previous solution, we had to enclose the entry part inside two mutex locks. But here, only one lock is sufficient. Hence, the process need not be blocked twice. This saves a great deal of time as blocking a process causes a lot of additional temporal overhead. Here, initially we have the `in_mutex`. Again, all the readers and writers have to queue in this mutex to ensure equal priority. Once a reader acquires the `in_mutex` (after a writer completes its execution or after a fellow reader signals the mutex), it shows its presence by increasing the variable `readers_started` and then immediately signals the `in_mutex`. The only thing that can keep a reader waiting, in this algorithm, is the wait for `in_mutex`. Hence, the reader directly proceeds to its critical section. Note that all the readers can read at the same time as only writers have a critical section in between the `wait()` and `signal()` methods of `in_mutex`. After the reader executes its critical section, the reader has to demark that it has completed its critical section execution and does not need the resource anymore. So, it waits for the `out_mutex` and once it acquires it, it increments the variable `readers_completed`, thus, announcing its completion of resource usage. Further, it goes to check if any writer is waiting by checking the variable `writer_waiting`. If yes, it checks if any fellow readers are executing in their critical sections. If not, it signals the writer to start its execution by calling `signal()` on the semaphore `write_sem`. After this, it signals the `out_mutex` to release the variable `readers_completed` for other readers and continues to its remainder section.
+
+
+## Correctness of the starve-free solutions
+
+### Mutual Exclusion
+- In the first solution (commonly used solution), the `rw_mutex` ensures mutual exclusion among all the writers and the first reader. Also, the `in_mutex` ensures mutual exclusion among all the processes. The `mutex` ensures mutual exclusion between the readers trying to access the variable `counter`.
+- In the second solution (optimized), the `in_mutex` ensures mutual exclusion among all the processes. The `out_mutex` implements mutual exclusion for the variables `readers_completed` and `writer_waiting`. The `in_mutex` serves another role of ensuring the mutual exclusion for the variable `readers_started`. Furthermore, the semaphore `write_sem` ensures mutual exclusion among the readers and the waiting writer.
+
+### Bounded Waiting
+In both the methods, before entering the critical section, all the processes must pass through `in_mutex` which stores all the waiting processes in a FIFO data structure. So, for a finite number of processes, the waiting time for any process in the queue is finite or bounded.
+
+### Progress Requirement
+Both the algorithms have such a structure that the systems cannot enter a state of deadlock. As long as the time of execution is finite for all the processes in their critical sections, there will be progress as the processes will keep on executing after waiting in the queue of `in_mutex`.
 
 ## References
 
